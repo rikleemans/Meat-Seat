@@ -1,0 +1,58 @@
+@page "/data-checker"
+
+@using MeetNSeat.Client.Services
+@using System.Security.Claims
+@using MeetNSeat.Client.Models
+@using Blazored.SessionStorage
+
+@attribute [Authorize(Roles = "3")]
+@inject IApiClientService _apiClientService;
+@inject ISessionStorageService _storage
+@inject AuthenticationStateProvider _authStateProvider
+
+<div>
+    <h3>User Ip - @_ipAddress.Ip</h3>
+    <h3>User Id - @_userId</h3>
+    <h3>ClaimsPrincipal Data</h3>
+
+    <p>@_authMessage</p>
+
+    @if (_claims.Any())
+    {
+        <table class="table">
+            @foreach (var claim in _claims)
+            {
+                <tr>
+                    <td>@claim.Type</td>
+                    <td>@claim.Value</td>
+                </tr>
+            }
+        </table>
+    }
+</div>
+
+@code {
+    private string _userId;
+    private string _authMessage;
+    IpAddress _ipAddress = new();
+    private IEnumerable<Claim> _claims = Enumerable.Empty<Claim>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _ipAddress = await _apiClientService.GetUserIpAsync();
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity.IsAuthenticated)
+        {
+            _authMessage = $"{user.Identity.Name} is authenticated.";
+            _claims = user.Claims;
+        }
+        else
+        {
+            _authMessage = "The user is NOT authenticated.";
+        }
+
+        _userId = await _storage.GetItemAsync<string>("userId");
+    }
+}

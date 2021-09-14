@@ -1,0 +1,15 @@
+<button @onclick="@Toggle" class="btn btn-primary">Click</button>
+
+@if(!Collapsed)@ChildContent
+
+@code {
+    [Parameter]
+    public RenderFragment ChildContent { get; set; }
+    [Parameter]
+    public bool Collapsed { get; set; }
+
+    private void Toggle()
+    {
+        Collapsed = !Collapsed;
+    }
+}

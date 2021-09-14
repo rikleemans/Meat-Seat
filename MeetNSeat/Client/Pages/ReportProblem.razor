@@ -1,0 +1,127 @@
+﻿@inject ISessionStorageService _sessionStorage;
+@inject AuthenticationStateProvider _authStateProvider
+
+@page "/report-problem"
+@using MeetNSeat.Client.Services
+@using MeetNSeat.Client.Models
+@using Blazored.SessionStorage
+@using System.IO
+@attribute [Authorize(Roles = "1,2,3")]
+
+@inject ISnackbar _snackbar
+
+<main role="main" class="col-md-12 ml-sm-auto col-lg-12 px-4">
+    <h2 class="pt-3 pb-2 mb-3 border-bottom">Report problem</h2>
+    <div>
+        <form>
+            <div class="mb-3">
+                <div>
+                    <label class="form-label h4">Problem</label>
+                    <input class="form-control mb-2" type="text" style="max-width: 36%" @bind="Title" placeholder="Enter a title here ..." @bind:event="oninput" maxlength="50">
+                </div>
+                <span style="position: absolute; right: 65%; margin-top: -28px">@Title.Length / 50</span>
+                <textarea class="form-control" style="min-height: 40px; white-space: pre-line" rows="8" placeholder="Enter your problem here ..." role="textbox" @bind="Description" @bind:event="oninput" maxlength="1000"></textarea>
+                <span style="position: absolute; right: 36px; margin-top: -24px">@Description.Length / 1000</span>
+            </div>
+            <div class="mb-3 p-2" style="display: grid; grid-template-columns: auto auto; border: thin solid #ced4da; border-radius: 4px;">
+                <div class="mr-5">
+                    <label class="form-label">Location</label>
+                    <select class="form-control" @onchange="OnLocationChange" aria-label="Default select example">
+                        <option>Select a location</option>
+                        @if (Locations.Any())
+                        {
+                            @foreach (var location in Locations)
+                            {
+                                <option value="@location.Id">@location.Name, @location.City</option>
+                            }
+                        }
+                    </select>
+                    <br />
+                    <InputFile OnChange="@SingleUpload" />
+                </div>
+                <div>
+                    <label class="form-label">Room</label>
+                    <select class="form-control" @bind="RoomName" @bind:event="oninput" aria-label="Default select example">
+                        <option>Select a room</option>
+                        @if (Rooms.Any())
+                        {
+                            @foreach (var room in Rooms)
+                            {
+                                <option value="@room.Name">@room.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+            </div>
+            <button @onclick="AddProblem" type="button" disabled="@(Description.Length < 1 || Title.Length < 1)" class="btn btn-primary">Report problem</button>
+        </form>
+    </div>
+</main>
+
+@code {
+    List<LocationModel> Locations { get; set; } = new();
+    List<RoomModel> Rooms { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Locations = (await LocationService.GetAllLocations()).ToList();
+
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity.IsAuthenticated)
+        {
+            UserId = user.FindFirst(res => res.Type == "sub")?.Value.Split("|")[1];
+            Nickname = user.FindFirst(c => c.Type == "nickname")?.Value;
+            Email = user.FindFirst(c => c.Type == "email")?.Value;
+        }
+    }
+
+    private async Task SingleUpload(InputFileChangeEventArgs e)
+    {
+        var imageFile = await e.File.RequestImageFileAsync("", 1366, 768);
+        await using var fileStream = imageFile.OpenReadStream();
+        await using MemoryStream ms = new();
+
+        await fileStream.CopyToAsync(ms);
+
+        Picture = ms.ToArray();
+    }
+
+    async Task OnLocationChange(ChangeEventArgs e)
+    {
+        var locationId = Convert.ToInt32(e.Value);
+        LocationName = Locations.Find(location => location.Id == locationId)?.Name;
+        await GetRoomsAtLocation(locationId);
+    }
+
+    private async Task GetRoomsAtLocation(int id)
+    {
+        Rooms.Clear();
+        var floors = (await FloorService.GetAllFloorsAndRoomsByLocationId(id)).ToList();
+        foreach (var floor in floors)
+            Rooms.AddRange(floor.Rooms);
+    }
+
+    private string LocationName { get; set; }
+    private string RoomName { get; set; }
+    private string UserId { get; set; }
+    private string Nickname { get; set; }
+    private string Email { get; set; }
+    private string Title { get; set; } = string.Empty;
+    private string Description { get; set; } = string.Empty;
+    private byte[] Picture { get; set; }
+
+    private async Task AddProblem()
+    {
+        Console.WriteLine(Description);
+        var success = await ProblemService.AddProblem(new ProblemModel(LocationName, RoomName, UserId, Nickname, Email, Title, Description, Picture));
+        if (success)
+        {
+            _snackbar.Add("Successfully added problem", Severity.Success);
+        }
+        else
+        {
+            _snackbar.Add("Failed to add problem!", Severity.Error);
+        }
+    }
+}

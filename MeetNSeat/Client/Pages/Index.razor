@@ -1,0 +1,40 @@
+﻿@page "/"
+@inject AuthenticationStateProvider _authStateProvider
+@inject NavigationManager _nav
+
+<div class="container-fluid hero-image">
+    <div class="hero-text">
+        <h1>Book a room at your</h1>
+        <h1>work locations.</h1>
+    </div>
+    
+    <img class="mockup img-fluid" src="img/Mockup.png"/>
+</div>
+
+<div style="margin-top: 100px"></div>
+
+<div class="container">
+    <h3 class="cgi-text">Make a reservation</h3>
+    <p>
+        On this platform you can make reservations for conference rooms or workspaces. By selecting a date and location
+        you can make a reservation for you. This platform offers the opportunity to not only make a reservation but also
+        report problems and feedback.
+    </p>
+</div>
+
+<div style="margin-top: 100px"></div>
+
+<div class="container-fluid bg-whitesmoke text-center jumbotron-contact">
+    <h1>Can we help you?</h1>
+    <a href="https://www.cginederland.nl/nl" class="btn btn-primary btn-circle">Contact</a>
+</div>
+
+@code
+{
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity.IsAuthenticated) _nav.NavigateTo("dashboard");
+    }
+}

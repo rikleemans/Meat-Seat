@@ -1,0 +1,256 @@
+﻿@page "/dashboard"
+
+@using MeetNSeat.Client.Services
+@using MeetNSeat.Client.Models
+@using Blazored.SessionStorage
+@using System.Globalization
+@using MeetNSeat.Client.Dialogs
+
+@inject IApiClientService _apiClientService
+@inject ISessionStorageService _sessionStorage
+@inject IDialogService _dialog
+@inject ISnackbar _snackbar
+@inject NavigationManager _nav
+@inject AuthenticationStateProvider _authStateProvider
+
+
+@attribute [Authorize(Roles = "1,2,3")]
+
+<main role="main" class="col-md-12 ml-sm-auto col-lg-12 px-4">
+    <h2 class="pt-3">Dashboard</h2>
+    <div id="unique_id_scroll_section" class="ma-0" style="height:400px;overflow: auto;">
+        <MudPaper Elevation="0" Height="auto" Class="d-flex flex-column justify-space-between py-6">
+
+        <table class="table table-striped">
+            <thead>
+            <tr>
+                <th scope="col">Start time</th>
+                <th scope="col">End time</th>
+                <th scope="col">Location</th>
+                <th scope="col">Room</th>
+                <th scope="col">Type</th>
+                <th scope="col">Attendees</th>
+                <th scope="col">Confirmed</th>
+                <th scope="col"></th> @* this needs to be here *@
+            </tr>
+            </thead>
+            <tbody>
+            @if (UserReservations.Any())
+            {
+                foreach (var reservation in UserReservations)
+                {
+                    <tr>
+                        <td>@reservation.StartTime.ToLocalTime().ToString("dddd, dd MMMM yyyy HH:mm", new CultureInfo("en-US"))</td>
+                        <td>@reservation.EndTime.ToLocalTime().ToString("dddd, dd MMMM yyyy HH:mm", new CultureInfo("en-US"))</td>
+                        <td>@GetLocation(reservation.RoomId).City</td>
+                        <td>@GetRoom(reservation.RoomId).Name</td>
+                        <td>@GetRoom(reservation.RoomId).Type</td>
+                        <td>@reservation.Attendees</td>
+                        
+                            @if (reservation.IsConfirmed.HasValue)
+                            {
+                                <td style="min-width: 100px">
+                                    <span class="oi oi-check mx-2 p-4" aria-hidden="true"></span>
+                                </td>
+
+                            }
+                            else
+                            {
+                                if (reservation.StartTime.Date == DateTime.Today)
+                                {
+                                    <td style="min-width: 100px">
+                                        <button @onclick="() => ConfirmReservation(reservation)" style="margin: 5px" type="button" class="btn btn-primary">Confirm</button>
+                                    </td>
+                                }
+                                else
+                                {
+
+                                    <td style="min-width: 100px">
+                                        Not yet available to confirm
+                                    </td>
+                                }
+                            }
+                        @if (!reservation.IsConfirmed.HasValue)
+                            {
+                                <td>
+                                    <button @onclick="() => EditReservation(reservation, GetRoom(reservation.RoomId), GetLocation(reservation.RoomId).Id)" style="margin: 5px" type="button" class="btn btn-primary">Edit</button>
+                                    <button @onclick="() => DeleteReservation(reservation)" style="margin: 5px" type="button" class="btn btn-danger">Cancel</button>
+                                </td>
+                            }
+                        
+                    </tr>
+                }
+            }
+            </tbody>
+        </table>
+            <MudScrollToTop
+                Selector="#unique_id_scroll_section"
+                VisibleCssClass="visible absolute"
+                HiddenCssClass="invisible">
+            </MudScrollToTop>
+        </MudPaper>
+    </div>
+    <h2 class="pt-3 pb-2 mb-3">User feedback</h2>
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th scope="col">Description</th>
+                <th scope="col">Feedback state</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Feedback.Any())
+            {
+                foreach (var feedback in Feedback)
+                {
+                    <tr class="color:red">
+                        <td style="white-space: pre-line">@feedback.Description</td>
+                        <td>
+                            @if (feedback.FeedbackState == 1)
+                            {
+                                <h3>&#128577;</h3>
+                            }
+                            @if (feedback.FeedbackState == 2)
+                            {
+                                <h3>&#128528;</h3>
+                            }
+                            @if (feedback.FeedbackState == 3)
+                            {
+                                <h3>&#128578;</h3>
+                            }
+                        </td>
+                    </tr>
+}
+            }
+        </tbody>
+    </table>
+</main>
+
+@code{
+    private List<LocationModel> Locations { get; set; }
+    private List<FloorModel> Floors { get; set; }
+    private List<RoomModel> Rooms { get; set; }
+    private string UserId { get; set; }
+    List<FeedbackModel> Feedback { get; set; } = new();
+    private List<ReservationModel> UserReservations { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity.IsAuthenticated)
+        {
+            UserId = $"{user.FindFirst(res => res.Type == "sub")?.Value.Split("|")[1]}";
+        }
+        UserReservations = (await UserService.GetUserReservations(UserId)).ToList();
+        Locations = (await LocationService.GetAllLocations()).ToList();
+        Floors = (await FloorService.GetAllFloors()).ToList();
+        Rooms = (await RoomService.GetAllRooms()).ToList();
+        UserId = await _sessionStorage.GetItemAsync<string>("userId");
+        Feedback = (await FeedbackService.GetAllFeedbackByUserId(UserId)).ToList();
+    }
+
+    private RoomModel GetRoom(int roomId)
+    {
+        return Rooms.SingleOrDefault(res => res.Id == roomId);
+    }
+
+    private LocationModel GetLocation(int roomId)
+    {
+        var room = GetRoom(roomId);
+        var floor = Floors.SingleOrDefault(res => res.Id == room.FloorId);
+        return Locations.SingleOrDefault(res => res.Id == floor?.LocationId);
+    }
+
+    private async Task ConfirmReservation(ReservationModel reservation)
+    {
+        var ip = await _apiClientService.GetUserIpAsync();
+        await UserService.ConfirmReservation(ip.Ip, reservation);
+        UserReservations = (await UserService.GetUserReservations(UserId)).ToList();
+        Console.WriteLine(UserReservations[0].IsConfirmed);
+    }
+
+    private IEnumerable<DateTime> FindInterval(DateTime from,
+        EditDialog.TimePeriod period,
+        int count)
+    {
+        while (true)
+        {
+            from = period switch
+            {
+                EditDialog.TimePeriod.Day => @from.AddDays(count),
+                EditDialog.TimePeriod.Week => @from.AddDays(7 * count),
+                EditDialog.TimePeriod.Month => @from.AddMonths(count),
+                _ => @from
+            };
+
+            yield return from;
+        }
+    }
+
+    private async Task EditReservation(ReservationModel reservation, RoomModel roomModel, int locationId)
+    {
+        try
+        {
+            reservation.LocationId = locationId;
+            reservation.Type = roomModel.Type;
+
+            var parameters = new DialogParameters { ["Reservation"] = reservation };
+            parameters.Add("ContentText", "Edit the reservation below");
+            parameters.Add("ButtonText", "Edit");
+            parameters.Add("IsEdit", true);
+            var dialog = _dialog.Show<EditDialog>("Edit Reservation", parameters);
+            var result = await dialog.Result;
+
+            if (!result.Cancelled)
+            {
+                var res = result.Data.ToString();
+                if (string.IsNullOrEmpty(res))
+                {
+                    _snackbar.Add("Unable to convert result string!", Severity.Error);
+                    return;
+                }
+                var list = res.Split("|").ToList();
+                reservation.Attendees = int.Parse(list[0]);
+                reservation.StartTime = Convert.ToDateTime(list[1]);
+                reservation.EndTime = Convert.ToDateTime(list[2]);
+
+                var period = int.Parse(list[3]) switch{
+                    1 => EditDialog.TimePeriod.Day,
+                    2 => EditDialog.TimePeriod.Week,
+                    3 => EditDialog.TimePeriod.Month,
+                    _ => EditDialog.TimePeriod.Day
+                };
+                var interval = int.Parse(list[4]);
+                var repetitions = int.Parse(list[5]);
+
+                var reoccurringStartDates = FindInterval(reservation.StartTime, period, interval).Take(repetitions).ToList();
+                var reoccurringEndDates = FindInterval(reservation.EndTime, period, interval).Take(repetitions).ToList();
+                var repeatSuccess = false;
+                for (var i = 0; i < reoccurringStartDates.Count(); i++)
+                {
+                    var repeatReservation = new ReservationModel(reservation);
+                    repeatReservation.StartTime = reoccurringStartDates[i];
+                    repeatReservation.EndTime = reoccurringEndDates[i];
+                    repeatSuccess = await UserService.CreateReservation(repeatReservation);
+                }
+                var success = await UserService.EditReservation(reservation);
+                if (success) _snackbar.Add("Successfully edited reservation!", Severity.Success);
+                if (repeatSuccess) _snackbar.Add("Successfully added repeating reservations!", Severity.Success);
+            }
+            UserReservations = (await UserService.GetUserReservations(UserId)).ToList();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DeleteReservation(ReservationModel reservation)
+    {
+        UserReservations.Remove(UserReservations.Find(res => res.Id == reservation.Id));
+        var success = await ReservationService.DeleteReservation(reservation.Id);
+        if (success) _snackbar.Add("Successfully removed reservation!", Severity.Success);
+    }
+}
